@@ -5,7 +5,8 @@ from .views import (
     PasswordResetView, 
     PasswordResetConfirmView,
     OTPVerificationView,
-    ResendOTPView
+    ResendOTPView,
+    ProfileUpdateView
 )
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
@@ -18,4 +19,5 @@ urlpatterns = [
     path('resend-otp/', ResendOTPView.as_view(), name='resend-otp'),
     path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('profile/', ProfileUpdateView.as_view(), name='profile-update'),
 ] 
