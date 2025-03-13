@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from .models import CustomUser, Comment
 
 User = get_user_model()
 
@@ -37,3 +38,15 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 class OTPVerificationSerializer(serializers.Serializer):
     email = serializers.EmailField()
     otp = serializers.CharField(max_length=6) 
+
+class ProfileUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomUser
+        fields = ['email', 'username', 'phone_number', 'is_phone_verified', 'is_email_verified']
+
+class CommentSerializer(serializers.ModelSerializer):
+    user = serializers.ReadOnlyField(source='user.email')
+
+    class Meta:
+        model = Comment
+        fields = ['id', 'user', 'content', 'created_at', 'updated_at']

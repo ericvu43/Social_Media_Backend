@@ -1,4 +1,4 @@
-from rest_framework import status, generics
+from rest_framework import status, generics, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
@@ -9,12 +9,15 @@ from .serializers import (
     UserLoginSerializer,
     PasswordResetSerializer,
     PasswordResetConfirmSerializer,
-    OTPVerificationSerializer
+    OTPVerificationSerializer,
+    ProfileUpdateSerializer,
+    CommentSerializer
 )
 from django.utils import timezone
 from datetime import timedelta
 from .utils import generate_otp, send_otp_email, send_password_reset_email
 import uuid
+from.models import Comment
 
 User = get_user_model()
 
@@ -169,3 +172,27 @@ class ResendOTPView(APIView):
             return Response({'message': 'New OTP sent successfully'})
         except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND) 
+
+class ProfileUpdateView(generics.UpdateAPIView):
+    queryset = User.objects.all()
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ProfileUpdateSerializer
+
+    def get_object(self):
+        return self.request.user
+    
+class CommentListCreateView(generics.ListCreateAPIView):
+    queryset = Comment.objects.all()
+    serializer_class = CommentSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+class CommentDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Comment.objects.all()
+    serializer_class = CommentSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    def get_queryset(self):
+        return Comment.objects.filter(user=self.request.user)
