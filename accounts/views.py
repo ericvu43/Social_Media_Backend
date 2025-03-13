@@ -1,4 +1,4 @@
-from rest_framework import status, generics
+from rest_framework import status, generics, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
@@ -9,12 +9,14 @@ from .serializers import (
     UserLoginSerializer,
     PasswordResetSerializer,
     PasswordResetConfirmSerializer,
-    OTPVerificationSerializer
+    OTPVerificationSerializer,
+    MessageSerializer
 )
 from django.utils import timezone
 from datetime import timedelta
 from .utils import generate_otp, send_otp_email, send_password_reset_email
 import uuid
+from .models import Message
 
 User = get_user_model()
 
@@ -168,4 +170,24 @@ class ResendOTPView(APIView):
             
             return Response({'message': 'New OTP sent successfully'})
         except User.DoesNotExist:
-            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND) 
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+class MessageListCreateView(generics.ListCreateAPIView):
+    serializer_class = MessageSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        return Message.objects.filter(sender=user) | Message.objects.filter(recipient=user)
+
+    def perform_create(self, serializer):
+        serializer.save(sender=self.request.user)
+
+class MessageDetailView(generics.RetrieveDestroyAPIView):
+    queryset = Message.objects.all()
+    serializer_class = MessageSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        return Message.objects.filter(sender=user) | Message.objects.filter(recipient=user)

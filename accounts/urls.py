@@ -6,7 +6,10 @@ from .views import (
     PasswordResetConfirmView,
     OTPVerificationView,
     ResendOTPView,
-    ProfileUpdateView
+    ProfileUpdateView,
+    MessageListCreateView,
+    MessageDetailView
+
 )
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
@@ -20,4 +23,6 @@ urlpatterns = [
     path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('profile/', ProfileUpdateView.as_view(), name='profile-update'),
+    path('messages/', MessageListCreateView.as_view(), name='message-list-create'),
+    path('messages/<int:pk>/', MessageDetailView.as_view(), name='message-detail'),
 ] 
