@@ -11,13 +11,14 @@ from .serializers import (
     PasswordResetConfirmSerializer,
     OTPVerificationSerializer,
     ProfileUpdateSerializer,
-    CommentSerializer
+    CommentSerializer,
+    MessageSerializer
 )
 from django.utils import timezone
 from datetime import timedelta
 from .utils import generate_otp, send_otp_email, send_password_reset_email
 import uuid
-from.models import Comment
+from.models import Comment, Message
 
 User = get_user_model()
 
@@ -171,6 +172,7 @@ class ResendOTPView(APIView):
             
             return Response({'message': 'New OTP sent successfully'})
         except User.DoesNotExist:
+          
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND) 
 
 class ProfileUpdateView(generics.UpdateAPIView):
@@ -196,3 +198,25 @@ class CommentDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         return Comment.objects.filter(user=self.request.user)
+
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+class MessageListCreateView(generics.ListCreateAPIView):
+    serializer_class = MessageSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        return Message.objects.filter(sender=user) | Message.objects.filter(recipient=user)
+
+    def perform_create(self, serializer):
+        serializer.save(sender=self.request.user)
+
+class MessageDetailView(generics.RetrieveDestroyAPIView):
+    queryset = Message.objects.all()
+    serializer_class = MessageSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        return Message.objects.filter(sender=user) | Message.objects.filter(recipient=user)

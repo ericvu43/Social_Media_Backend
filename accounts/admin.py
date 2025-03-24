@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import CustomUser, Comment
+from .models import CustomUser, Comment, Message
 
 class CustomUserAdmin(UserAdmin):
     model = CustomUser
@@ -11,3 +11,4 @@ class CustomUserAdmin(UserAdmin):
 
 admin.site.register(CustomUser, CustomUserAdmin)
 admin.site.register(Comment) 
+admin.site.register(Message)
