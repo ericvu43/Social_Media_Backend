@@ -14,6 +14,18 @@ class CustomUser(AbstractUser):
     REQUIRED_FIELDS = ['username']
 
     def __str__(self):
+      
+        return self.email
+
+class Comment(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    content = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f'Comment by {self.user.email} on {self.created_at}' 
+
         return self.email 
     
 class Message(models.Model):
@@ -24,3 +36,4 @@ class Message(models.Model):
 
     def __str__(self):
         return f'Message from {self.sender.email} to {self.recipient.email} at {self.timestamp}'
+
