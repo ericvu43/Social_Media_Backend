@@ -25,8 +25,6 @@ class Comment(models.Model):
 
     def __str__(self):
         return f'Comment by {self.user.email} on {self.created_at}' 
-
-        return self.email 
     
 class Message(models.Model):
     sender = models.ForeignKey(settings.AUTH_USER_MODEL, related_name='sent_messages', on_delete=models.CASCADE)

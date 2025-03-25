@@ -164,3 +164,5 @@ EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = config('emailappusername')
 EMAIL_HOST_PASSWORD = config('emailapppassword')
+
+FRONTEND_URL = 'http://localhost:3000'

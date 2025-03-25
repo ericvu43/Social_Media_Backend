@@ -10,7 +10,8 @@ from .views import (
     CommentListCreateView,
     CommentDetailView,
     MessageListCreateView,
-    MessageDetailView
+    MessageDetailView,
+    VerifyTokenView
 )
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
@@ -28,4 +29,6 @@ urlpatterns = [
     path('comments/<int:pk>/', CommentDetailView.as_view(), name='comment-detail'),
     path('messages/', MessageListCreateView.as_view(), name='message-list-create'),
     path('messages/<int:pk>/', MessageDetailView.as_view(), name='message-detail'),
+    path('verify-token/', VerifyTokenView.as_view(), name='verify-token'),
+
 ] 
