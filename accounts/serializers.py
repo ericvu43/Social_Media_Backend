@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
-from .models import CustomUser, Comment, Message
+from .models import CustomUser, Comment, Message, FriendRequest, Like, Post
 
 User = get_user_model()
 
@@ -59,4 +59,34 @@ class MessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = Message
         fields = ['id', 'sender', 'recipient', 'content', 'timestamp']
+
+class FriendRequestSerializer(serializers.ModelSerializer):
+    sender = serializers.ReadOnlyField(source='sender.email')
+    receiver = serializers.ReadOnlyField(source='receiver.email')
+    receiver_id = serializers.IntegerField(write_only=True)
+    
+    class Meta:
+        model = FriendRequest
+        fields = ['id', 'sender', 'receiver', 'receiver_id', 'status', 'created_at', 'updated_at']
+        read_only_fields = ['status']
+    
+    def create(self, validated_data):
+        receiver_id = validated_data.pop('receiver_id')
+        receiver = User.objects.get(id=receiver_id)
+        validated_data['receiver'] = receiver
+        return super().create(validated_data)
+
+class LikeSerializer(serializers.ModelSerializer):
+    user = serializers.ReadOnlyField(source='user.email')
+    
+    class Meta:
+        model = Like
+        fields = ['id', 'user', 'comment', 'created_at']
+
+class PostSerializer(serializers.ModelSerializer):
+    user = serializers.ReadOnlyField(source='user.email')
+    
+    class Meta:
+        model = Post
+        fields = ['id', 'user', 'content', 'created_at', 'updated_at']
 

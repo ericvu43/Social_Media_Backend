@@ -1,4 +1,4 @@
-from rest_framework import status, generics, permissions
+from rest_framework import status, generics, permissions, filters
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
@@ -14,13 +14,17 @@ from .serializers import (
     OTPVerificationSerializer,
     ProfileUpdateSerializer,
     CommentSerializer,
-    MessageSerializer
+    MessageSerializer,
+    FriendRequestSerializer,
+    LikeSerializer,
+    PostSerializer
 )
 from django.utils import timezone
 from datetime import timedelta
 from .utils import generate_otp, send_otp_email, send_password_reset_email
 import uuid
-from.models import Comment, Message
+from .models import Comment, Message, FriendRequest, Like, Post
+from django.db.models import Q
 
 from django.db import IntegrityError
 
@@ -209,8 +213,7 @@ class ResendOTPView(APIView):
             
             return Response({'message': 'New OTP sent successfully'})
         except User.DoesNotExist:
-          
-            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND) 
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
 class ProfileUpdateView(generics.UpdateAPIView):
     queryset = User.objects.all()
@@ -270,3 +273,121 @@ class VerifyTokenView(APIView):
             return Response({'isValid': True}, status=status.HTTP_200_OK)
         except (InvalidToken, TokenError) as e:
             return Response({'isValid': False, 'error': str(e)}, status=status.HTTP_401_UNAUTHORIZED)
+
+class FriendRequestListCreateView(generics.ListCreateAPIView):
+    serializer_class = FriendRequestSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        return FriendRequest.objects.filter(
+            Q(sender=user) | Q(receiver=user)
+        )
+    
+    def perform_create(self, serializer):
+        serializer.save(sender=self.request.user)
+
+class FriendRequestDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = FriendRequestSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        return FriendRequest.objects.filter(
+            Q(sender=user) | Q(receiver=user)
+        )
+    
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        
+        # Only the receiver can accept or reject a friend request
+        if instance.receiver != request.user:
+            return Response(
+                {"error": "Only the receiver can accept or reject a friend request"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Only allow updating the status field
+        status_value = request.data.get('status')
+        if status_value not in ['accepted', 'rejected']:
+            return Response(
+                {"error": "Status must be 'accepted' or 'rejected'"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        instance.status = status_value
+        instance.save()
+        
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+class FriendListView(generics.ListAPIView):
+    serializer_class = UserRegistrationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        # Get IDs of users who have accepted friend requests with the current user
+        friend_ids = FriendRequest.objects.filter(
+            (Q(sender=user) | Q(receiver=user)) & Q(status='accepted')
+        ).values_list(
+            'sender_id' if Q(receiver=user) else 'receiver_id', flat=True
+        )
+        return User.objects.filter(id__in=friend_ids)
+
+class LikeCreateView(generics.CreateAPIView):
+    serializer_class = LikeSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def perform_create(self, serializer):
+        comment_id = self.request.data.get('comment')
+        # Check if the user has already liked this comment
+        if Like.objects.filter(user=self.request.user, comment_id=comment_id).exists():
+            return Response(
+                {"error": "You have already liked this comment"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        serializer.save(user=self.request.user)
+
+class LikeDeleteView(generics.DestroyAPIView):
+    serializer_class = LikeSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        return Like.objects.filter(user=self.request.user)
+
+class PostListCreateView(generics.ListCreateAPIView):
+    serializer_class = PostSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        return Post.objects.all().order_by('-created_at')
+    
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+class PostDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = PostSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        return Post.objects.filter(user=self.request.user)
+
+class FeedView(generics.ListAPIView):
+    serializer_class = PostSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        
+        # Get IDs of friends
+        friend_ids = FriendRequest.objects.filter(
+            (Q(sender=user) | Q(receiver=user)) & Q(status='accepted')
+        ).values_list(
+            'sender_id' if Q(receiver=user) else 'receiver_id', flat=True
+        )
+        
+        # Get posts from friends and the user's own posts
+        return Post.objects.filter(
+            Q(user__in=friend_ids) | Q(user=user)
+        ).order_by('-created_at')
