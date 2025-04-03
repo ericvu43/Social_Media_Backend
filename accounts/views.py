@@ -3,7 +3,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from django.contrib.auth import get_user_model, authenticate
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.tokens import RefreshToken, UntypedToken
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+
 from .serializers import (
     UserRegistrationSerializer,
     UserLoginSerializer,
@@ -24,6 +26,8 @@ import uuid
 from .models import Comment, Message, FriendRequest, Like, Post
 from django.db.models import Q
 
+from django.db import IntegrityError
+
 User = get_user_model()
 
 class RegisterView(generics.CreateAPIView):
@@ -32,22 +36,34 @@ class RegisterView(generics.CreateAPIView):
     serializer_class = UserRegistrationSerializer
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.save()
-        
-        # Generate and send OTP
-        otp = generate_otp()
-        user.otp = otp
-        user.otp_created_at = timezone.now()
-        user.save()
-        
-        send_otp_email(user.email, otp)
-        
-        return Response({
-            'message': 'Registration successful. Please verify your email with the OTP sent.',
-            'user_id': user.id
-        }, status=status.HTTP_201_CREATED)
+        try:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            user = serializer.save()
+            
+            # Generate and send OTP
+            otp = generate_otp()
+            user.otp = otp
+            user.otp_created_at = timezone.now()
+            user.save()
+            
+            send_otp_email(user.email, otp)
+            
+            return Response({
+                'message': 'Registration successful. Please verify your email with the OTP sent.',
+                'user_id': user.id
+            }, status=status.HTTP_201_CREATED)
+        except IntegrityError as e:
+            # Handle unique constraint violation
+            return Response({
+                'error': 'A user with this email or username already exists.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            # Log the exception
+            print(f"Error during registration: {e}")
+            return Response({
+                'error': 'An error occurred during registration. Please try again later.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class LoginView(APIView):
     permission_classes = (AllowAny,)
@@ -78,6 +94,10 @@ class LoginView(APIView):
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 class PasswordResetView(APIView):
     permission_classes = (AllowAny,)
 
@@ -87,6 +107,13 @@ class PasswordResetView(APIView):
             email = serializer.validated_data['email']
             try:
                 user = User.objects.get(email=email)
+                
+                # Check if a token was created recently
+                if user.otp_created_at and user.otp_created_at > timezone.now() - timedelta(minutes=0):
+                    return Response({
+                        'error': 'A password reset token was already sent recently. Please wait before requesting a new one.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
                 token = str(uuid.uuid4())
                 user.otp = token  # Using OTP field to store reset token
                 user.otp_created_at = timezone.now()
@@ -101,6 +128,11 @@ class PasswordResetView(APIView):
                 return Response({
                     'error': 'No user found with this email address'
                 }, status=status.HTTP_404_NOT_FOUND)
+            except Exception as e:
+                logger.error(f"Error during password reset: {e}")
+                return Response({
+                    'error': 'An error occurred during password reset. Please try again later.'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class PasswordResetConfirmView(APIView):
@@ -121,11 +153,16 @@ class PasswordResetConfirmView(APIView):
                     user.otp_created_at = None
                     user.save()
                     return Response({'message': 'Password reset successful'})
+                logger.error(f"Invalid or expired token for email {email}")
                 return Response({'error': 'Invalid or expired token'}, status=status.HTTP_400_BAD_REQUEST)
             except User.DoesNotExist:
+                logger.error(f"User not found for email {email}")
                 return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+            except Exception as e:
+                logger.error(f"Error during password reset confirmation for email {email}: {e}")
+                return Response({'error': 'An error occurred during password reset confirmation. Please try again later.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        logger.error(f"Invalid data: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 class OTPVerificationView(APIView):
     permission_classes = (AllowAny,)
 
@@ -202,6 +239,9 @@ class CommentDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         return Comment.objects.filter(user=self.request.user)
 
+    def handle_no_permission(self):
+        return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
 class MessageListCreateView(generics.ListCreateAPIView):
     serializer_class = MessageSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -221,6 +261,18 @@ class MessageDetailView(generics.RetrieveDestroyAPIView):
     def get_queryset(self):
         user = self.request.user
         return Message.objects.filter(sender=user) | Message.objects.filter(recipient=user)
+    
+class VerifyTokenView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        token = request.data.get('token')
+
+        try:
+            UntypedToken(token)
+            return Response({'isValid': True}, status=status.HTTP_200_OK)
+        except (InvalidToken, TokenError) as e:
+            return Response({'isValid': False, 'error': str(e)}, status=status.HTTP_401_UNAUTHORIZED)
 
 class FriendRequestListCreateView(generics.ListCreateAPIView):
     serializer_class = FriendRequestSerializer

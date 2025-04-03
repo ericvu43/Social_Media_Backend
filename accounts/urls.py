@@ -11,6 +11,7 @@ from .views import (
     CommentDetailView,
     MessageListCreateView,
     MessageDetailView,
+    VerifyTokenView,
     FriendRequestListCreateView,
     FriendRequestDetailView,
     FriendListView,
@@ -36,6 +37,8 @@ urlpatterns = [
     path('comments/<int:pk>/', CommentDetailView.as_view(), name='comment-detail'),
     path('messages/', MessageListCreateView.as_view(), name='message-list-create'),
     path('messages/<int:pk>/', MessageDetailView.as_view(), name='message-detail'),
+    path('verify-token/', VerifyTokenView.as_view(), name='verify-token'),
+
     path('friend-requests/', FriendRequestListCreateView.as_view(), name='friend-request-list-create'),
     path('friend-requests/<int:pk>/', FriendRequestDetailView.as_view(), name='friend-request-detail'),
     path('friends/', FriendListView.as_view(), name='friend-list'),

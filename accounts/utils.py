@@ -16,9 +16,10 @@ def send_otp_email(email, otp):
     send_mail(subject, message, from_email, recipient_list)
 
 def send_password_reset_email(email, token):
+    reset_url = f"{settings.FRONTEND_URL}/reset-password?token={token}&email={email}"
     subject = 'Password Reset Request'
-    message = f'Your password reset token is: {token}. This token will expire in 1 hour.'
+    message = f'Click the link below to reset your password:\n\n{reset_url}\n\nThis link will expire in 1 hour.'
     from_email = settings.EMAIL_HOST_USER
     recipient_list = [email]
     
-    send_mail(subject, message, from_email, recipient_list) 
+    send_mail(subject, message, from_email, recipient_list)
