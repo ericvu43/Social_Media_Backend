@@ -36,10 +36,10 @@ cd p-466_group4-Backend
 python -m venv venv
 ```
 
-4. Activate the virtual environment:
+4. Activate the virtual environment in your root directory:
 - On Windows:
 ```
-venv/scripts/activate
+.venv/scripts/activate
 ```
 - On macOS/Linux:
 ```
@@ -53,12 +53,13 @@ pip install -r requirements.txt
 
 6. Create a .env file in the project root and add your email and project password:
 ```
-EMAIL_HOST_USER=your-email@example.com
-EMAIL_HOST_PASSWORD=your-email-password
+emailappusername=your-email@example.com
+emailapppassword=your-email-password
 ```
 
 7. Set up the database:
 ```
+python manage.py makemigrations
 python manage.py migrate
 ```
 
