@@ -1,10 +1,14 @@
 from rest_framework import status, generics, permissions, filters
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.permissions import AllowAny
+from rest_framework.generics import RetrieveAPIView
+from rest_framework.permissions import AllowAny, IsAuthenticatedOrReadOnly, IsAuthenticated
 from django.contrib.auth import get_user_model, authenticate
 from rest_framework_simplejwt.tokens import RefreshToken, UntypedToken
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+
+from .models import CustomUser
+from .serializers import UserSerializer
 
 from .serializers import (
     UserRegistrationSerializer,
@@ -391,3 +395,15 @@ class FeedView(generics.ListAPIView):
         return Post.objects.filter(
             Q(user__in=friend_ids) | Q(user=user)
         ).order_by('-created_at')
+    
+class UserProfileView(RetrieveAPIView):
+    queryset = CustomUser.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticatedOrReadOnly]
+
+class CurrentUserView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        serializer = UserSerializer(request.user)
+        return Response(serializer.data)

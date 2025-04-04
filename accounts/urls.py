@@ -19,7 +19,9 @@ from .views import (
     LikeDeleteView,
     PostListCreateView,
     PostDetailView,
-    FeedView
+    FeedView,
+    UserProfileView,
+    CurrentUserView,
 )
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
@@ -47,4 +49,7 @@ urlpatterns = [
     path('posts/', PostListCreateView.as_view(), name='post-list-create'),
     path('posts/<int:pk>/', PostDetailView.as_view(), name='post-detail'),
     path('feed/', FeedView.as_view(), name='feed'),
+
+    path('users/<int:pk>/', UserProfileView.as_view(), name='user-profile'),
+    path('users/me/', CurrentUserView.as_view(), name='current-user'),
 ] 
