@@ -1,8 +1,9 @@
 from rest_framework import status, generics, permissions, filters
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.generics import RetrieveAPIView
+from rest_framework.generics import RetrieveAPIView, ListAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticatedOrReadOnly, IsAuthenticated
+from rest_framework.exceptions import ValidationError
 from django.contrib.auth import get_user_model, authenticate
 from rest_framework_simplejwt.tokens import RefreshToken, UntypedToken
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
@@ -246,6 +247,14 @@ class CommentDetailView(generics.RetrieveUpdateDestroyAPIView):
     def handle_no_permission(self):
         return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
+class PostCommentsView(generics.ListAPIView):
+    serializer_class = CommentSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    def get_queryset(self):
+        post_id = self.kwargs['post_id']
+        return Comment.objects.filter(post_id=post_id).order_by('-created_at')
+    
 class MessageListCreateView(generics.ListCreateAPIView):
     serializer_class = MessageSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -342,15 +351,11 @@ class FriendListView(generics.ListAPIView):
 class LikeCreateView(generics.CreateAPIView):
     serializer_class = LikeSerializer
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def perform_create(self, serializer):
-        comment_id = self.request.data.get('comment')
-        # Check if the user has already liked this comment
-        if Like.objects.filter(user=self.request.user, comment_id=comment_id).exists():
-            return Response(
-                {"error": "You have already liked this comment"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        post_id = self.request.data.get('post')  # Use 'post' instead of 'comment'
+        if Like.objects.filter(user=self.request.user, post_id=post_id).exists():
+            raise ValidationError({"error": "You have already liked this post"})
         serializer.save(user=self.request.user)
 
 class LikeDeleteView(generics.DestroyAPIView):
@@ -370,12 +375,17 @@ class PostListCreateView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
-class PostDetailView(generics.RetrieveUpdateDestroyAPIView):
-    serializer_class = PostSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    
-    def get_queryset(self):
-        return Post.objects.filter(user=self.request.user)
+class PostDetailView(APIView):
+    def get(self, request, post_id):
+        post = Post.objects.get(id=post_id)
+        total_likes = post.likes.count()
+        user_liked = post.likes.filter(user=request.user).exists()
+        return Response({
+            "id": post.id,
+            "content": post.content,
+            "likes": total_likes,
+            "user_liked": user_liked,
+        })
 
 class FeedView(generics.ListAPIView):
     serializer_class = PostSerializer
@@ -407,3 +417,11 @@ class CurrentUserView(APIView):
     def get(self, request):
         serializer = UserSerializer(request.user)
         return Response(serializer.data)
+    
+class UserPostsView(ListAPIView):
+    serializer_class = PostSerializer
+    permission_classes = [IsAuthenticatedOrReadOnly]
+
+    def get_queryset(self):
+        user_id = self.kwargs['user_id']
+        return Post.objects.filter(user_id=user_id).order_by('-created_at')
