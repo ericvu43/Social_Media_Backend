@@ -22,6 +22,8 @@ from .views import (
     FeedView,
     UserProfileView,
     CurrentUserView,
+    UserPostsView,
+    PostCommentsView,
 )
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
@@ -37,6 +39,7 @@ urlpatterns = [
     path('profile/', ProfileUpdateView.as_view(), name='profile-update'),
     path('comments/', CommentListCreateView.as_view(), name='comment-list-create'),
     path('comments/<int:pk>/', CommentDetailView.as_view(), name='comment-detail'),
+    path('posts/<int:post_id>/comments/', PostCommentsView.as_view(), name='post-comments'),
     path('messages/', MessageListCreateView.as_view(), name='message-list-create'),
     path('messages/<int:pk>/', MessageDetailView.as_view(), name='message-detail'),
     path('verify-token/', VerifyTokenView.as_view(), name='verify-token'),
@@ -47,9 +50,11 @@ urlpatterns = [
     path('likes/', LikeCreateView.as_view(), name='like-create'),
     path('likes/<int:pk>/', LikeDeleteView.as_view(), name='like-delete'),
     path('posts/', PostListCreateView.as_view(), name='post-list-create'),
-    path('posts/<int:pk>/', PostDetailView.as_view(), name='post-detail'),
+    path('posts/<int:post_id>/', PostDetailView.as_view(), name='post-detail'),
     path('feed/', FeedView.as_view(), name='feed'),
 
     path('users/<int:pk>/', UserProfileView.as_view(), name='user-profile'),
     path('users/me/', CurrentUserView.as_view(), name='current-user'),
+
+    path('users/<int:user_id>/posts/', UserPostsView.as_view(), name='user-posts'),
 ] 
