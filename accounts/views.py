@@ -21,8 +21,11 @@ from django.utils import timezone
 from datetime import timedelta
 from .utils import generate_otp, send_otp_email, send_password_reset_email
 import uuid
-from .models import Comment, Message, FriendRequest, Like, Post
+from .models import Comment, Message, FriendRequest, Like, Post, CustomUser
 from django.db.models import Q
+from django.http import JsonResponse
+from itertools import chain
+from django.core.paginator import Paginator
 
 User = get_user_model()
 
@@ -339,3 +342,45 @@ class FeedView(generics.ListAPIView):
         return Post.objects.filter(
             Q(user__in=friend_ids) | Q(user=user)
         ).order_by('-created_at')
+
+def search_api(request):
+    query = request.GET.get('q', '')
+    if not query:
+        return JsonResponse({'error': 'Query parameter q is required'}, status=400)
+    
+    # Search users and posts
+    users = CustomUser.objects.search(query)
+    posts = Post.objects.search(query)
+    
+    # Convert to dictionaries for JSON response
+    user_results = [
+        {
+            'id': user.id,
+            'type': 'user',
+            'username': user.username,
+            'email': user.email,
+            'name': f"{user.first_name} {user.last_name}".strip()
+        }
+        for user in users[:20]  # Limit to first 20 results
+    ]
+    
+    post_results = [
+        {
+            'id': post.id,
+            'type': 'post',
+            'content': post.content[:100] + '...' if len(post.content) > 100 else post.content,
+            'author': post.user.username,
+            'created_at': post.created_at.isoformat()
+        }
+        for post in posts[:20]  # Limit to first 20 results
+    ]
+    
+    # Combine results
+    results = user_results + post_results
+    
+    return JsonResponse({
+        'query': query,
+        'results': results,
+        'total_users': users.count(),
+        'total_posts': posts.count()
+    })
