@@ -1,9 +1,16 @@
 from rest_framework import status, generics, permissions, filters
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.permissions import AllowAny
+from rest_framework.generics import RetrieveAPIView, ListAPIView
+from rest_framework.permissions import AllowAny, IsAuthenticatedOrReadOnly, IsAuthenticated
+from rest_framework.exceptions import ValidationError
 from django.contrib.auth import get_user_model, authenticate
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.tokens import RefreshToken, UntypedToken
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+
+from .models import CustomUser
+from .serializers import UserSerializer
+
 from .serializers import (
     UserRegistrationSerializer,
     UserLoginSerializer,
@@ -27,6 +34,8 @@ from django.http import JsonResponse
 from itertools import chain
 from django.core.paginator import Paginator
 
+from django.db import IntegrityError
+
 User = get_user_model()
 
 class RegisterView(generics.CreateAPIView):
@@ -35,22 +44,34 @@ class RegisterView(generics.CreateAPIView):
     serializer_class = UserRegistrationSerializer
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.save()
-        
-        # Generate and send OTP
-        otp = generate_otp()
-        user.otp = otp
-        user.otp_created_at = timezone.now()
-        user.save()
-        
-        send_otp_email(user.email, otp)
-        
-        return Response({
-            'message': 'Registration successful. Please verify your email with the OTP sent.',
-            'user_id': user.id
-        }, status=status.HTTP_201_CREATED)
+        try:
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            user = serializer.save()
+            
+            # Generate and send OTP
+            otp = generate_otp()
+            user.otp = otp
+            user.otp_created_at = timezone.now()
+            user.save()
+            
+            send_otp_email(user.email, otp)
+            
+            return Response({
+                'message': 'Registration successful. Please verify your email with the OTP sent.',
+                'user_id': user.id
+            }, status=status.HTTP_201_CREATED)
+        except IntegrityError as e:
+            # Handle unique constraint violation
+            return Response({
+                'error': 'A user with this email or username already exists.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            # Log the exception
+            print(f"Error during registration: {e}")
+            return Response({
+                'error': 'An error occurred during registration. Please try again later.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class LoginView(APIView):
     permission_classes = (AllowAny,)
@@ -81,6 +102,10 @@ class LoginView(APIView):
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 class PasswordResetView(APIView):
     permission_classes = (AllowAny,)
 
@@ -90,6 +115,13 @@ class PasswordResetView(APIView):
             email = serializer.validated_data['email']
             try:
                 user = User.objects.get(email=email)
+                
+                # Check if a token was created recently
+                if user.otp_created_at and user.otp_created_at > timezone.now() - timedelta(minutes=0):
+                    return Response({
+                        'error': 'A password reset token was already sent recently. Please wait before requesting a new one.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
                 token = str(uuid.uuid4())
                 user.otp = token  # Using OTP field to store reset token
                 user.otp_created_at = timezone.now()
@@ -104,6 +136,11 @@ class PasswordResetView(APIView):
                 return Response({
                     'error': 'No user found with this email address'
                 }, status=status.HTTP_404_NOT_FOUND)
+            except Exception as e:
+                logger.error(f"Error during password reset: {e}")
+                return Response({
+                    'error': 'An error occurred during password reset. Please try again later.'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class PasswordResetConfirmView(APIView):
@@ -124,11 +161,16 @@ class PasswordResetConfirmView(APIView):
                     user.otp_created_at = None
                     user.save()
                     return Response({'message': 'Password reset successful'})
+                logger.error(f"Invalid or expired token for email {email}")
                 return Response({'error': 'Invalid or expired token'}, status=status.HTTP_400_BAD_REQUEST)
             except User.DoesNotExist:
+                logger.error(f"User not found for email {email}")
                 return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+            except Exception as e:
+                logger.error(f"Error during password reset confirmation for email {email}: {e}")
+                return Response({'error': 'An error occurred during password reset confirmation. Please try again later.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        logger.error(f"Invalid data: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 class OTPVerificationView(APIView):
     permission_classes = (AllowAny,)
 
@@ -205,6 +247,17 @@ class CommentDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         return Comment.objects.filter(user=self.request.user)
 
+    def handle_no_permission(self):
+        return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+class PostCommentsView(generics.ListAPIView):
+    serializer_class = CommentSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    def get_queryset(self):
+        post_id = self.kwargs['post_id']
+        return Comment.objects.filter(post_id=post_id).order_by('-created_at')
+    
 class MessageListCreateView(generics.ListCreateAPIView):
     serializer_class = MessageSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -224,6 +277,18 @@ class MessageDetailView(generics.RetrieveDestroyAPIView):
     def get_queryset(self):
         user = self.request.user
         return Message.objects.filter(sender=user) | Message.objects.filter(recipient=user)
+    
+class VerifyTokenView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        token = request.data.get('token')
+
+        try:
+            UntypedToken(token)
+            return Response({'isValid': True}, status=status.HTTP_200_OK)
+        except (InvalidToken, TokenError) as e:
+            return Response({'isValid': False, 'error': str(e)}, status=status.HTTP_401_UNAUTHORIZED)
 
 class FriendRequestListCreateView(generics.ListCreateAPIView):
     serializer_class = FriendRequestSerializer
@@ -289,15 +354,11 @@ class FriendListView(generics.ListAPIView):
 class LikeCreateView(generics.CreateAPIView):
     serializer_class = LikeSerializer
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def perform_create(self, serializer):
-        comment_id = self.request.data.get('comment')
-        # Check if the user has already liked this comment
-        if Like.objects.filter(user=self.request.user, comment_id=comment_id).exists():
-            return Response(
-                {"error": "You have already liked this comment"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        post_id = self.request.data.get('post')  # Use 'post' instead of 'comment'
+        if Like.objects.filter(user=self.request.user, post_id=post_id).exists():
+            raise ValidationError({"error": "You have already liked this post"})
         serializer.save(user=self.request.user)
 
 class LikeDeleteView(generics.DestroyAPIView):
@@ -317,12 +378,17 @@ class PostListCreateView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
-class PostDetailView(generics.RetrieveUpdateDestroyAPIView):
-    serializer_class = PostSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    
-    def get_queryset(self):
-        return Post.objects.filter(user=self.request.user)
+class PostDetailView(APIView):
+    def get(self, request, post_id):
+        post = Post.objects.get(id=post_id)
+        total_likes = post.likes.count()
+        user_liked = post.likes.filter(user=request.user).exists()
+        return Response({
+            "id": post.id,
+            "content": post.content,
+            "likes": total_likes,
+            "user_liked": user_liked,
+        })
 
 class FeedView(generics.ListAPIView):
     serializer_class = PostSerializer
@@ -342,6 +408,7 @@ class FeedView(generics.ListAPIView):
         return Post.objects.filter(
             Q(user__in=friend_ids) | Q(user=user)
         ).order_by('-created_at')
+
 
 def search_api(request):
     query = request.GET.get('q', '')
@@ -384,3 +451,24 @@ def search_api(request):
         'total_users': users.count(),
         'total_posts': posts.count()
     })
+    
+class UserProfileView(RetrieveAPIView):
+    queryset = CustomUser.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticatedOrReadOnly]
+
+class CurrentUserView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        serializer = UserSerializer(request.user)
+        return Response(serializer.data)
+    
+class UserPostsView(ListAPIView):
+    serializer_class = PostSerializer
+    permission_classes = [IsAuthenticatedOrReadOnly]
+
+    def get_queryset(self):
+        user_id = self.kwargs['user_id']
+        return Post.objects.filter(user_id=user_id).order_by('-created_at')
+
