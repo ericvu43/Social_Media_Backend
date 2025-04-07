@@ -1,6 +1,23 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.conf import settings
+from django.db.models import Q, Manager
+
+# Custom managers for search functionality
+class CustomUserManager(AbstractUser.objects.get_queryset().model._default_manager.__class__):
+    def search(self, query):
+        return self.filter(
+            Q(username__icontains=query) |
+            Q(email__icontains=query) |
+            Q(first_name__icontains=query) |
+            Q(last_name__icontains=query)
+        )
+
+class PostManager(Manager):
+    def search(self, query):
+        return self.filter(
+            Q(content__icontains=query)
+        )
 
 class CustomUser(AbstractUser):
     email = models.EmailField(unique=True)
@@ -12,9 +29,10 @@ class CustomUser(AbstractUser):
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['username']
+    
+    objects = CustomUserManager()
 
     def __str__(self):
-      
         return self.email
 
 class Comment(models.Model):
@@ -26,7 +44,7 @@ class Comment(models.Model):
 
     def __str__(self):
         return f'Comment by {self.user.email} on {self.created_at}' 
-    
+
 class Message(models.Model):
     sender = models.ForeignKey(settings.AUTH_USER_MODEL, related_name='sent_messages', on_delete=models.CASCADE)
     recipient = models.ForeignKey(settings.AUTH_USER_MODEL, related_name='received_messages', on_delete=models.CASCADE)
@@ -71,6 +89,8 @@ class Post(models.Model):
     content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
+    objects = PostManager()
     
     def __str__(self):
         return f"Post by {self.user.email} on {self.created_at}"
