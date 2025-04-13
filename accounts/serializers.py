@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
-from .models import CustomUser, Comment, Message, FriendRequest, Like, Post
+from .models import CustomUser, Comment, Message, FriendRequest, Like, Post, Page
+from django.conf import settings
 
 User = get_user_model()
 
@@ -83,14 +84,49 @@ class LikeSerializer(serializers.ModelSerializer):
         model = Like
         fields = ['id', 'user', 'post', 'created_at']
 
+from rest_framework import serializers
+from .models import Post
+
 class PostSerializer(serializers.ModelSerializer):
-    user = serializers.ReadOnlyField(source='user.email')
-    
+    media_url = serializers.SerializerMethodField()  # Add a field to return the media URL
+
     class Meta:
         model = Post
-        fields = ['id', 'user', 'content', 'created_at', 'updated_at']
+        fields = ['id', 'user', 'page', 'content', 'media', 'media_url', 'created_at', 'updated_at']
+
+    def get_media_url(self, obj):
+        if obj.media:
+            media_type = "image" if obj.media.name.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')) else "video"
+            request = self.context.get('request')  # Get the request object from the serializer context
+            base_url = request.build_absolute_uri('/') if request else settings.MEDIA_URL
+            return {
+                "type": media_type,
+                "url": f"{base_url.rstrip('/')}{obj.media.url}"  # Construct the absolute URL
+            }
+        return None
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = ['id', 'username','is_email_verified']
+
+class PageSerializer(serializers.ModelSerializer):
+    creator = serializers.ReadOnlyField(source='creator.email')  # Include the creator's email
+    followers_count = serializers.IntegerField(source='followers.count', read_only=True)  # Count of followers
+    is_following = serializers.SerializerMethodField()  # Add this field
+
+    class Meta:
+        model = Page
+        fields = [
+            'id', 'creator', 'name', 'description', 'type', 'tags',
+            'location', 'profile_image', 'cover_image', 'email',
+            'phone_number', 'website', 'accepts_donations', 'created_at', 'followers_count',
+            'is_following'
+        ]
+
+    def get_is_following(self, obj):
+        """Check if the current user is following the page."""
+        user = self.context['request'].user
+        if user.is_authenticated:
+            return user in obj.followers.all()
+        return False

@@ -3,6 +3,47 @@ from django.db import models
 from django.conf import settings
 from django.db.models import Q, Manager
 
+class Page(models.Model):
+    creator = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='created_pages'
+    )
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    type = models.CharField(
+        max_length=50,
+        choices=[
+            ('Business', 'Business'),
+            ('Organization', 'Organization'),
+            ('Event', 'Event'),
+            ('Education', 'Education'),
+            ('Fan Page', 'Fan Page'),
+            ('Other', 'Other'),
+        ],
+        default='Other'
+    )
+    tags = models.JSONField(blank=True, null=True)  # Store tags as a list of strings
+    location = models.CharField(max_length=255, blank=True, null=True)
+    profile_image = models.ImageField(upload_to='page_profile_images/', blank=True, null=True)  # Profile image
+    cover_image = models.ImageField(upload_to='page_cover_images/', blank=True, null=True)  # Cover image
+    email = models.EmailField(blank=True, null=True)  # Email field
+    phone_number = models.CharField(max_length=15, blank=True, null=True)  # Phone number field
+    website = models.URLField(blank=True, null=True)  # Website field
+    accepts_donations = models.BooleanField(default=False)  # Accepts donations field
+    created_at = models.DateTimeField(auto_now_add=True)
+    followers = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        related_name='followed_pages',
+        blank=True
+    )
+
+    def __str__(self):
+        return f"Page: {self.name} by {self.creator.email}"
+
+    def __str__(self):
+        return f"Page: {self.name} by {self.creator.email}"
+
 # Custom manager for the CustomUser model
 class CustomUserManager(BaseUserManager):
     """
@@ -109,12 +150,13 @@ class Like(models.Model):
 
 class Post(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    content = models.TextField()
+    page = models.ForeignKey('Page', on_delete=models.SET_NULL, related_name='posts', null=True, blank=True)  # Optional page association
+    content = models.TextField(blank=True)  # Allow blank content for media-only posts
+    media = models.FileField(upload_to='media/', null=True, blank=True)  # Use a single folder name
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
-    objects = PostManager()
-    
-    def __str__(self):
-        return f"Post by {self.user.email} on {self.created_at}"
 
+    def __str__(self):
+        if self.page:
+            return f"Post by {self.user.email} on {self.created_at} in Page: {self.page.name}"
+        return f"Post by {self.user.email} on {self.created_at}"

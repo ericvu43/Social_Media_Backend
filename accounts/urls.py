@@ -24,8 +24,17 @@ from .views import (
     CurrentUserView,
     UserPostsView,
     PostCommentsView,
+    PageListView,
+    PageDetailView,
+    PageCreateView,
+    PageFollowToggleView,
+    PagePostListView,
+    FollowedPagesView,
 )
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+
+from django.conf import settings
+from django.conf.urls.static import static
 
 urlpatterns = [
     path('register/', RegisterView.as_view(), name='register'),
@@ -48,7 +57,7 @@ urlpatterns = [
     path('friend-requests/<int:pk>/', FriendRequestDetailView.as_view(), name='friend-request-detail'),
     path('friends/', FriendListView.as_view(), name='friend-list'),
     path('likes/', LikeCreateView.as_view(), name='like-create'),
-    path('likes/<int:pk>/', LikeDeleteView.as_view(), name='like-delete'),
+    path('likes/<int:post_id>/<int:user_id>/', LikeDeleteView.as_view(), name='like-delete'),
     path('posts/', PostListCreateView.as_view(), name='post-list-create'),
     path('posts/<int:post_id>/', PostDetailView.as_view(), name='post-detail'),
     path('feed/', FeedView.as_view(), name='feed'),
@@ -57,4 +66,11 @@ urlpatterns = [
     path('users/me/', CurrentUserView.as_view(), name='current-user'),
 
     path('users/<int:user_id>/posts/', UserPostsView.as_view(), name='user-posts'),
-] 
+
+    path('pages/', PageListView.as_view(), name='page-list'),  # List all pages
+    path('pages/<int:id>/', PageDetailView.as_view(), name='page-detail'),  # Retrieve a single page
+    path('pages/create/', PageCreateView.as_view(), name='page-create'),  # Create a page
+    path('pages/<int:page_id>/follow/', PageFollowToggleView.as_view(), name='page-follow-toggle'),  # Follow/unfollow a page
+    path('pages/<int:page_id>/posts/', PagePostListView.as_view(), name='page-post-list'),  # List posts for a page
+    path('pages/followed/', FollowedPagesView.as_view(), name='followed-pages'),  # List followed pages
+]
