@@ -1,14 +1,15 @@
 from rest_framework import status, generics, permissions, filters
+from rest_framework.filters import SearchFilter
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.generics import RetrieveAPIView, ListAPIView
+from rest_framework.generics import RetrieveAPIView, ListAPIView, CreateAPIView
 from rest_framework.permissions import AllowAny, IsAuthenticatedOrReadOnly, IsAuthenticated
 from rest_framework.exceptions import ValidationError
 from django.contrib.auth import get_user_model, authenticate
 from rest_framework_simplejwt.tokens import RefreshToken, UntypedToken
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 
-from .models import CustomUser
+from .models import CustomUser, Page
 from .serializers import UserSerializer
 
 from .serializers import (
@@ -22,7 +23,8 @@ from .serializers import (
     MessageSerializer,
     FriendRequestSerializer,
     LikeSerializer,
-    PostSerializer
+    PostSerializer,
+    PageSerializer
 )
 from django.utils import timezone
 from datetime import timedelta
@@ -364,17 +366,29 @@ class LikeCreateView(generics.CreateAPIView):
 class LikeDeleteView(generics.DestroyAPIView):
     serializer_class = LikeSerializer
     permission_classes = [permissions.IsAuthenticated]
-    
-    def get_queryset(self):
-        return Like.objects.filter(user=self.request.user)
+
+    def get_object(self):
+        # Get the post_id and user_id from the URL
+        post_id = self.kwargs.get('post_id')
+        user_id = self.kwargs.get('user_id')
+
+        # Ensure the authenticated user matches the user_id in the URL
+        if self.request.user.id != user_id:
+            raise ValidationError({"error": "You can only delete your own likes."})
+
+        # Fetch the Like object
+        try:
+            return Like.objects.get(post_id=post_id, user_id=user_id)
+        except Like.DoesNotExist:
+            raise ValidationError({"error": "Like not found."})
 
 class PostListCreateView(generics.ListCreateAPIView):
     serializer_class = PostSerializer
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def get_queryset(self):
         return Post.objects.all().order_by('-created_at')
-    
+
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
@@ -386,28 +400,18 @@ class PostDetailView(APIView):
         return Response({
             "id": post.id,
             "content": post.content,
+            "media_url": post.media.url if post.media else None,
             "likes": total_likes,
             "user_liked": user_liked,
         })
-
+    
 class FeedView(generics.ListAPIView):
     serializer_class = PostSerializer
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def get_queryset(self):
-        user = self.request.user
-        
-        # Get IDs of friends
-        friend_ids = FriendRequest.objects.filter(
-            (Q(sender=user) | Q(receiver=user)) & Q(status='accepted')
-        ).values_list(
-            'sender_id' if Q(receiver=user) else 'receiver_id', flat=True
-        )
-        
-        # Get posts from friends and the user's own posts
-        return Post.objects.filter(
-            Q(user__in=friend_ids) | Q(user=user)
-        ).order_by('-created_at')
+        # Return all posts, ordered by creation date (newest first)
+        return Post.objects.all().order_by('-created_at')
 
 
 def search_api(request):
@@ -471,4 +475,61 @@ class UserPostsView(ListAPIView):
     def get_queryset(self):
         user_id = self.kwargs['user_id']
         return Post.objects.filter(user_id=user_id).order_by('-created_at')
+    
+class PageListView(ListAPIView):
+    queryset = Page.objects.all()
+    serializer_class = PageSerializer
+    filter_backends = [SearchFilter]
+    search_fields = ['name', 'description', 'tags', 'location']  # Allow filtering by these fields
 
+class PageDetailView(RetrieveAPIView):
+    queryset = Page.objects.all()
+    serializer_class = PageSerializer
+    lookup_field = 'id'  # Use 'id' to retrieve a page by its ID
+
+    def get_serializer_context(self):
+        """Pass the request context to the serializer."""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+class PageCreateView(CreateAPIView):
+    queryset = Page.objects.all()
+    serializer_class = PageSerializer
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        serializer.save(creator=self.request.user)  # Set the creator to the logged-in user
+
+class PageFollowToggleView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, page_id):
+        try:
+            page = Page.objects.get(id=page_id)
+            user = request.user
+
+            if user in page.followers.all():
+                page.followers.remove(user)  # Unfollow the page
+                return Response({"message": "Unfollowed the page"}, status=status.HTTP_200_OK)
+            else:
+                page.followers.add(user)  # Follow the page
+                return Response({"message": "Followed the page"}, status=status.HTTP_200_OK)
+        except Page.DoesNotExist:
+            return Response({"error": "Page not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+class PagePostListView(ListAPIView):
+    serializer_class = PostSerializer
+
+    def get_queryset(self):
+        page_id = self.kwargs['page_id']
+        return Post.objects.filter(page_id=page_id)  # Filter posts by page ID
+
+class FollowedPagesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        followed_pages = Page.objects.filter(followers=user)
+        serializer = PageSerializer(followed_pages, many=True, context={'request': request})
+        return Response(serializer.data)
