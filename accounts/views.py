@@ -308,15 +308,32 @@ class VerifyTokenView(APIView):
 class FriendRequestListCreateView(generics.ListCreateAPIView):
     serializer_class = FriendRequestSerializer
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def get_queryset(self):
         user = self.request.user
+        # Filter friend requests where the user is either the sender or the receiver
         return FriendRequest.objects.filter(
             Q(sender=user) | Q(receiver=user)
         )
-    
+
     def perform_create(self, serializer):
-        serializer.save(sender=self.request.user)
+        sender = self.request.user  # Automatically set the sender as the authenticated user
+        receiver_id = self.request.data.get('receiver_id')
+
+        # Validate that the receiver exists
+        try:
+            receiver = User.objects.get(id=receiver_id)
+        except User.DoesNotExist:
+            raise ValidationError({"error": "Receiver does not exist."})
+
+        # Check if a friend request already exists
+        if FriendRequest.objects.filter(sender=sender, receiver=receiver).exists():
+            raise ValidationError({"error": "Friend request already sent."})
+        if FriendRequest.objects.filter(sender=receiver, receiver=sender).exists():
+            raise ValidationError({"error": "You already have a pending friend request from this user."})
+
+        # Save the friend request
+        serializer.save(sender=sender, receiver=receiver)
 
 class FriendRequestDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = FriendRequestSerializer
@@ -571,3 +588,8 @@ class FollowedPagesView(APIView):
         followed_pages = Page.objects.filter(followers=user)
         serializer = PageSerializer(followed_pages, many=True, context={'request': request})
         return Response(serializer.data)
+    
+class AllUsersView(generics.ListAPIView):
+    queryset = CustomUser.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = [permissions.IsAuthenticated]
