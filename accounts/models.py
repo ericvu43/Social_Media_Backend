@@ -85,14 +85,15 @@ class PostManager(Manager):
 
 class CustomUser(AbstractUser):
     email = models.EmailField(unique=True)
-    phone_number = models.CharField(max_length=15, blank=True, null=True)
-    is_phone_verified = models.BooleanField(default=False)
+    username = models.CharField(max_length=150, blank=True, null=True)  
+    avatar = models.ImageField(upload_to='avatars/', blank=True, null=True)  
+    bio = models.TextField(blank=True, null=True)  
     is_email_verified = models.BooleanField(default=False)
     otp = models.CharField(max_length=6, null=True, blank=True)
     otp_created_at = models.DateTimeField(null=True, blank=True)
 
     USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['username']
+    REQUIRED_FIELDS = [] 
     
     objects = CustomUserManager()
 

@@ -12,7 +12,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ('email', 'username', 'password', 'password2', 'phone_number')
+        fields = ('email', 'username', 'bio', 'password', 'password2')
 
     def validate(self, attrs):
         if attrs['password'] != attrs['password2']:
@@ -44,14 +44,7 @@ class OTPVerificationSerializer(serializers.Serializer):
 class ProfileUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
-        fields = ['email', 'username', 'phone_number', 'is_phone_verified', 'is_email_verified']
-
-class CommentSerializer(serializers.ModelSerializer):
-    user = serializers.ReadOnlyField(source='user.email')
-
-    class Meta:
-        model = Comment
-        fields = ['id', 'user', 'post', 'content', 'created_at', 'updated_at']
+        fields = ['id', 'username', 'email' , 'bio', 'avatar']
 
 class MessageSerializer(serializers.ModelSerializer):
     sender = serializers.ReadOnlyField(source='sender.email')
@@ -108,7 +101,14 @@ class PostSerializer(serializers.ModelSerializer):
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
-        fields = ['id', 'username','is_email_verified']
+        fields = ['id', 'username', 'email' , 'bio', 'avatar', 'is_email_verified']
+
+class CommentSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)  # Use the nested UserSerializer
+
+    class Meta:
+        model = Comment
+        fields = ['id', 'user', 'post', 'content', 'created_at', 'updated_at']
 
 class PageSerializer(serializers.ModelSerializer):
     creator = serializers.ReadOnlyField(source='creator.email')  # Include the creator's email
