@@ -173,6 +173,8 @@ class PasswordResetConfirmView(APIView):
                 return Response({'error': 'An error occurred during password reset confirmation. Please try again later.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         logger.error(f"Invalid data: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+
 class OTPVerificationView(APIView):
     permission_classes = (AllowAny,)
 
@@ -226,12 +228,23 @@ class ResendOTPView(APIView):
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
 
 class ProfileUpdateView(generics.UpdateAPIView):
-    queryset = User.objects.all()
+    queryset = CustomUser.objects.all()
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = ProfileUpdateSerializer
 
     def get_object(self):
         return self.request.user
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        if serializer.is_valid():
+            self.perform_update(serializer)
+            return Response(serializer.data)
+        else:
+            print(serializer.errors)  # Log the validation errors
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 class CommentListCreateView(generics.ListCreateAPIView):
     queryset = Comment.objects.all()
@@ -394,16 +407,41 @@ class PostListCreateView(generics.ListCreateAPIView):
 
 class PostDetailView(APIView):
     def get(self, request, post_id):
-        post = Post.objects.get(id=post_id)
-        total_likes = post.likes.count()
-        user_liked = post.likes.filter(user=request.user).exists()
-        return Response({
-            "id": post.id,
-            "content": post.content,
-            "media_url": post.media.url if post.media else None,
-            "likes": total_likes,
-            "user_liked": user_liked,
-        })
+        try:
+            post = Post.objects.get(id=post_id)
+            total_likes = post.likes.count()
+            user_liked = post.likes.filter(user=request.user).exists()
+
+            # Include user details
+            user_data = {
+                "id": post.user.id,
+                "username": post.user.username,
+                "avatar": post.user.avatar.url if post.user.avatar else None,
+            }
+
+            # Determine media type based on file extension
+            media_type = None
+            if post.media:
+                if post.media.url.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp')):
+                    media_type = "image"
+                elif post.media.url.lower().endswith(('.mp4', '.mov', '.avi', '.mkv', '.webm')):
+                    media_type = "video"
+
+            return Response({
+                "id": post.id,
+                "user": user_data,  # Include user details
+                "content": post.content,
+                "media_url": {
+                    "type": media_type,
+                    "url": post.media.url if post.media else None,
+                },
+                "likes": total_likes,
+                "user_liked": user_liked,
+                "created_at": post.created_at,
+                "updated_at": post.updated_at,
+            })
+        except Post.DoesNotExist:
+            return Response({"error": "Post not found"}, status=404)
     
 class FeedView(generics.ListAPIView):
     serializer_class = PostSerializer
