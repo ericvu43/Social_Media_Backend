@@ -55,30 +55,31 @@ class MessageSerializer(serializers.ModelSerializer):
         fields = ['id', 'sender', 'recipient', 'content', 'timestamp']
 
 class FriendRequestSerializer(serializers.ModelSerializer):
-    sender = serializers.ReadOnlyField(source='sender.email')
-    receiver = serializers.ReadOnlyField(source='receiver.email')
-    receiver_id = serializers.IntegerField(write_only=True)
-    
+    receiver_id = serializers.IntegerField(write_only=True)  # Allow receiver ID to be written
+
     class Meta:
         model = FriendRequest
         fields = ['id', 'sender', 'receiver', 'receiver_id', 'status', 'created_at', 'updated_at']
-        read_only_fields = ['status']
-    
+        read_only_fields = ['sender', 'status', 'created_at', 'updated_at']
+
     def create(self, validated_data):
-        receiver_id = validated_data.pop('receiver_id')
-        receiver = User.objects.get(id=receiver_id)
+        # Map receiver_id to the receiver field
+        receiver_id = validated_data.pop('receiver_id', None)
+        if not receiver_id:
+            raise serializers.ValidationError({"receiver_id": "This field is required."})
+        try:
+            receiver = User.objects.get(id=receiver_id)
+        except User.DoesNotExist:
+            raise serializers.ValidationError({"receiver_id": "User with this ID does not exist."})
         validated_data['receiver'] = receiver
         return super().create(validated_data)
-
+    
 class LikeSerializer(serializers.ModelSerializer):
     user = serializers.ReadOnlyField(source='user.email')
     
     class Meta:
         model = Like
         fields = ['id', 'user', 'post', 'created_at']
-
-from rest_framework import serializers
-from .models import Post
 
 class PostSerializer(serializers.ModelSerializer):
     media_url = serializers.SerializerMethodField()  # Add a field to return the media URL
