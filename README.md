@@ -39,7 +39,7 @@ python -m venv venv
 4. Activate the virtual environment in your root directory:
 - On Windows:
 ```
-.venv/scripts/activate
+venv/scripts/activate
 ```
 - On macOS/Linux:
 ```

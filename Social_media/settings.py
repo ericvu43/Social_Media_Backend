@@ -13,6 +13,8 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 from pathlib import Path
 from decouple import config
 
+import os
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -166,3 +168,6 @@ EMAIL_HOST_USER = config('emailappusername')
 EMAIL_HOST_PASSWORD = config('emailapppassword')
 
 FRONTEND_URL = 'http://localhost:3000'
+
+MEDIA_URL = '/post_media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'post_media')

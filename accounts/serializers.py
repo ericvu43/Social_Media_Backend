@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
-from .models import CustomUser, Comment, Message, FriendRequest, Like, Post
+from .models import CustomUser, Comment, Message, FriendRequest, Like, Post, Page
+from django.conf import settings
 
 User = get_user_model()
 
@@ -11,7 +12,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ('email', 'username', 'password', 'password2', 'phone_number')
+        fields = ('email', 'username', 'bio', 'password', 'password2')
 
     def validate(self, attrs):
         if attrs['password'] != attrs['password2']:
@@ -43,14 +44,7 @@ class OTPVerificationSerializer(serializers.Serializer):
 class ProfileUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
-        fields = ['email', 'username', 'phone_number', 'is_phone_verified', 'is_email_verified']
-
-class CommentSerializer(serializers.ModelSerializer):
-    user = serializers.ReadOnlyField(source='user.email')
-
-    class Meta:
-        model = Comment
-        fields = ['id', 'user', 'post', 'content', 'created_at', 'updated_at']
+        fields = ['id', 'username', 'email' , 'bio', 'avatar']
 
 class MessageSerializer(serializers.ModelSerializer):
     sender = serializers.ReadOnlyField(source='sender.email')
@@ -61,21 +55,25 @@ class MessageSerializer(serializers.ModelSerializer):
         fields = ['id', 'sender', 'recipient', 'content', 'timestamp']
 
 class FriendRequestSerializer(serializers.ModelSerializer):
-    sender = serializers.ReadOnlyField(source='sender.email')
-    receiver = serializers.ReadOnlyField(source='receiver.email')
-    receiver_id = serializers.IntegerField(write_only=True)
-    
+    receiver_id = serializers.IntegerField(write_only=True)  # Allow receiver ID to be written
+
     class Meta:
         model = FriendRequest
         fields = ['id', 'sender', 'receiver', 'receiver_id', 'status', 'created_at', 'updated_at']
-        read_only_fields = ['status']
-    
+        read_only_fields = ['sender', 'status', 'created_at', 'updated_at']
+
     def create(self, validated_data):
-        receiver_id = validated_data.pop('receiver_id')
-        receiver = User.objects.get(id=receiver_id)
+        # Map receiver_id to the receiver field
+        receiver_id = validated_data.pop('receiver_id', None)
+        if not receiver_id:
+            raise serializers.ValidationError({"receiver_id": "This field is required."})
+        try:
+            receiver = User.objects.get(id=receiver_id)
+        except User.DoesNotExist:
+            raise serializers.ValidationError({"receiver_id": "User with this ID does not exist."})
         validated_data['receiver'] = receiver
         return super().create(validated_data)
-
+    
 class LikeSerializer(serializers.ModelSerializer):
     user = serializers.ReadOnlyField(source='user.email')
     
@@ -84,13 +82,52 @@ class LikeSerializer(serializers.ModelSerializer):
         fields = ['id', 'user', 'post', 'created_at']
 
 class PostSerializer(serializers.ModelSerializer):
-    user = serializers.ReadOnlyField(source='user.email')
-    
+    media_url = serializers.SerializerMethodField()  # Add a field to return the media URL
+
     class Meta:
         model = Post
-        fields = ['id', 'user', 'content', 'created_at', 'updated_at']
+        fields = ['id', 'user', 'page', 'content', 'media', 'media_url', 'created_at', 'updated_at']
+
+    def get_media_url(self, obj):
+        if obj.media:
+            media_type = "image" if obj.media.name.lower().endswith(('.jpg', '.jpeg', '.png', '.gif')) else "video"
+            request = self.context.get('request')  # Get the request object from the serializer context
+            base_url = request.build_absolute_uri('/') if request else settings.MEDIA_URL
+            return {
+                "type": media_type,
+                "url": f"{base_url.rstrip('/')}{obj.media.url}"  # Construct the absolute URL
+            }
+        return None
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
-        fields = ['id', 'username','is_email_verified']
+        fields = ['id', 'username', 'email' , 'bio', 'avatar', 'is_email_verified']
+
+class CommentSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)  # Use the nested UserSerializer
+
+    class Meta:
+        model = Comment
+        fields = ['id', 'user', 'post', 'content', 'created_at', 'updated_at']
+
+class PageSerializer(serializers.ModelSerializer):
+    creator = serializers.ReadOnlyField(source='creator.email')  # Include the creator's email
+    followers_count = serializers.IntegerField(source='followers.count', read_only=True)  # Count of followers
+    is_following = serializers.SerializerMethodField()  # Add this field
+
+    class Meta:
+        model = Page
+        fields = [
+            'id', 'creator', 'name', 'description', 'type', 'tags',
+            'location', 'profile_image', 'cover_image', 'email',
+            'phone_number', 'website', 'accepts_donations', 'created_at', 'followers_count',
+            'is_following'
+        ]
+
+    def get_is_following(self, obj):
+        """Check if the current user is following the page."""
+        user = self.context['request'].user
+        if user.is_authenticated:
+            return user in obj.followers.all()
+        return False
