@@ -8,6 +8,12 @@ from rest_framework.exceptions import ValidationError
 from django.contrib.auth import get_user_model, authenticate
 from rest_framework_simplejwt.tokens import RefreshToken, UntypedToken
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from django.shortcuts import render, get_object_or_404
+from django.db.models import Q
+from django.http import JsonResponse
+from itertools import chain
+from django.core.paginator import Paginator
+from django.db import IntegrityError
 
 from .models import CustomUser, Page
 from .serializers import UserSerializer
@@ -31,7 +37,6 @@ from datetime import timedelta
 from .utils import generate_otp, send_otp_email, send_password_reset_email
 import uuid
 from .models import Comment, Message, FriendRequest, Like, Post, CustomUser
-from django.db.models import Q
 from django.http import JsonResponse
 from itertools import chain
 from django.core.paginator import Paginator
@@ -279,10 +284,27 @@ class MessageListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        return Message.objects.filter(sender=user) | Message.objects.filter(recipient=user)
+        recipient_id = self.request.query_params.get('recipient')
+        
+        if recipient_id:
+            # Filter for conversations between current user and specific recipient
+            return Message.objects.filter(
+                (Q(sender=user) & Q(recipient__id=recipient_id)) |
+                (Q(recipient=user) & Q(sender__id=recipient_id))
+            ).order_by('timestamp')
+        else:
+            # Return all messages the user is involved in
+            return Message.objects.filter(
+                Q(sender=user) | Q(recipient=user)
+            ).order_by('timestamp')
 
     def perform_create(self, serializer):
-        serializer.save(sender=self.request.user)
+        recipient_id = self.request.data.get('recipient')
+        try:
+            recipient = User.objects.get(id=recipient_id)
+            serializer.save(sender=self.request.user, recipient=recipient)
+        except User.DoesNotExist:
+            raise ValidationError({"error": "Recipient does not exist."})
 
 class MessageDetailView(generics.RetrieveDestroyAPIView):
     queryset = Message.objects.all()
@@ -370,18 +392,31 @@ class FriendRequestDetailView(generics.RetrieveUpdateDestroyAPIView):
         return Response(serializer.data)
 
 class FriendListView(generics.ListAPIView):
-    serializer_class = UserRegistrationSerializer
+    serializer_class = UserSerializer
     permission_classes = [permissions.IsAuthenticated]
     
     def get_queryset(self):
         user = self.request.user
-        # Get IDs of users who have accepted friend requests with the current user
-        friend_ids = FriendRequest.objects.filter(
-            (Q(sender=user) | Q(receiver=user)) & Q(status='accepted')
-        ).values_list(
-            'sender_id' if Q(receiver=user) else 'receiver_id', flat=True
+        # Get friends with accepted friend requests
+        friends = []
+        
+        # Get friends where current user is the sender
+        sent_requests = FriendRequest.objects.filter(
+            sender=user, 
+            status='accepted'
         )
-        return User.objects.filter(id__in=friend_ids)
+        for request in sent_requests:
+            friends.append(request.receiver)
+            
+        # Get friends where current user is the receiver
+        received_requests = FriendRequest.objects.filter(
+            receiver=user, 
+            status='accepted'
+        )
+        for request in received_requests:
+            friends.append(request.sender)
+            
+        return friends
 
 class LikeCreateView(generics.CreateAPIView):
     serializer_class = LikeSerializer
